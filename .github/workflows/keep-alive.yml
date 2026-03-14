@@ -1,0 +1,22 @@
+name: Keep Supabase Alive
+
+on:
+  schedule:
+    # Berjalan setiap 5 menit (minimum interval GitHub Actions)
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Bisa dijalankan manual dari GitHub
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Ping Supabase Database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          # Install PostgreSQL client
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client > /dev/null 2>&1
+
+          # Ping the database with a simple query
+          psql "$DATABASE_URL" -c "SELECT 1;" && echo "✅ Supabase is alive!" || echo "❌ Failed to reach Supabase"
