@@ -1,2 +1,4 @@
 export * as bookController from './books.controller.js'
 export * as userController from './users.controller.js'
+export * as profileController from './profiles.controller.js'
+export * as categoryController from './categories.controller.js'
