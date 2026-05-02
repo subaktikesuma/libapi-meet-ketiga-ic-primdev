@@ -1,33 +1,56 @@
 # 📚 Library API
 
-REST API sederhana untuk manajemen perpustakaan (buku, pengguna, profil & kategori) menggunakan **Express.js**, **Prisma ORM**, dan **PostgreSQL (Supabase)**.
+REST API untuk manajemen perpustakaan menggunakan **Express.js**, **Prisma ORM**, dan **PostgreSQL (Supabase)** — dilengkapi autentikasi JWT, otorisasi berbasis role, validasi input, dan dokumentasi Swagger.
 
 ## 🛠 Tech Stack
 
-- **Runtime:** Node.js
-- **Framework:** Express.js v5
-- **ORM:** Prisma v7
-- **Database:** PostgreSQL (Supabase)
-- **Authentication:** bcrypt (password hashing)
+| Layer | Teknologi |
+|---|---|
+| **Runtime** | Node.js (ES Modules) |
+| **Framework** | Express.js v5 |
+| **ORM** | Prisma v7 |
+| **Database** | PostgreSQL (Supabase) |
+| **Auth** | JSON Web Token (JWT) |
+| **Hashing** | bcryptjs |
+| **Validation** | express-validator |
+| **API Docs** | Swagger UI (swagger-jsdoc + swagger-ui-express) |
+
+---
 
 ## 📁 Struktur Proyek
 
 ```
 meet-ketiga/
 ├── config/
-│   └── database.js              # Konfigurasi Prisma Client
+│   ├── database.js              # Konfigurasi Prisma Client
+│   └── swagger.js               # Konfigurasi Swagger / OpenAPI
 ├── controller/
 │   ├── index.controller.js      # Barrel export semua controller
+│   ├── auth.controller.js       # Logic register & login
 │   ├── books.controller.js      # Logic CRUD buku
 │   ├── users.controller.js      # Logic CRUD user
 │   ├── profiles.controller.js   # Logic CRUD profil
-│   └── categories.controller.js # Logic CRUD kategori
+│   ├── categories.controller.js # Logic CRUD kategori
+│   └── borrowings.controller.js # Logic CRUD peminjaman
+├── middleware/
+│   ├── authenticate.js          # Verifikasi JWT token
+│   ├── authorize.js             # Cek role (ADMIN / USER)
+│   └── validate.js              # Handler express-validator
+├── validation/
+│   ├── auth.validation.js       # Aturan validasi register & login
+│   ├── users.validation.js      # Aturan validasi user
+│   ├── books.validation.js      # Aturan validasi buku
+│   ├── borrowings.validation.js # Aturan validasi peminjaman
+│   ├── profiles.validation.js   # Aturan validasi profil
+│   └── categories.validation.js # Aturan validasi kategori
 ├── routes/
 │   ├── index.route.js           # Router utama
-│   ├── books.route.js           # Routing endpoint buku
-│   ├── users.route.js           # Routing endpoint user
-│   ├── profiles.route.js        # Routing endpoint profil
-│   └── categories.route.js      # Routing endpoint kategori
+│   ├── auth.route.js            # Endpoint autentikasi
+│   ├── books.route.js           # Endpoint buku
+│   ├── users.route.js           # Endpoint user
+│   ├── profiles.route.js        # Endpoint profil
+│   ├── categories.route.js      # Endpoint kategori
+│   └── borrowings.route.js      # Endpoint peminjaman
 ├── prisma/
 │   └── schema.prisma            # Prisma schema (model database)
 ├── .github/
@@ -39,203 +62,275 @@ meet-ketiga/
 └── package.json
 ```
 
-## 🚀 Instalasi
+---
+
+## 🚀 Instalasi & Menjalankan
 
 ```bash
-# Clone repository
+# 1. Clone repository
 git clone <repo-url>
 cd meet-ketiga
 
-# Install dependencies
+# 2. Install dependencies
 npm install
 
-# Setup environment variables
-# Buat file .env dengan isi:
+# 3. Buat file .env dan isi variabel berikut:
 DATABASE_URL="postgresql://<user>:<password>@<host>:5432/<db>"
 DIRECT_URL="postgresql://<user>:<password>@<host>:5432/<db>"
+JWT_SECRET=ganti_dengan_secret_yang_kuat
+JWT_EXPIRES_IN=1d
+BCRYPT_SALT_ROUNDS=10
 
-# Push schema ke database
-npx prisma db push
+# 4. Jalankan migrasi database
+npx prisma migrate dev
 
-# Generate Prisma Client
+# 5. Generate Prisma Client
 npx prisma generate
 
-# Jalankan server
-npx nodemon index.js
+# 6. Jalankan server (development)
+npm run dev
 ```
 
-Server akan berjalan di `http://localhost:3000`
+Server berjalan di `http://localhost:3000`  
+Swagger UI tersedia di **`http://localhost:3000/api-docs`**
+
+---
+
+## 🔐 Autentikasi & Otorisasi
+
+API menggunakan **JWT Bearer Token**. Semua endpoint (kecuali `/auth/register` dan `/auth/login`) memerlukan token.
+
+### Alur Autentikasi
+
+```
+POST /auth/register  →  Buat akun baru
+POST /auth/login     →  Dapatkan JWT token
+                         ↓
+           Gunakan token di header:
+           Authorization: Bearer <token>
+```
+
+### Role & Akses
+
+| Endpoint | USER | ADMIN |
+|---|:---:|:---:|
+| `POST /auth/register` & `POST /auth/login` | ✅ | ✅ |
+| `GET /books`, `GET /categories` | ✅ | ✅ |
+| `POST/PUT/DELETE /books`, `/categories` | ❌ | ✅ |
+| `POST /borrowings` (pinjam buku) | ✅ | ✅ |
+| `GET /borrowings/user/:userId` (milik sendiri) | ✅ | ✅ |
+| `GET /borrowings` (semua) | ❌ | ✅ |
+| `GET/POST/PUT/DELETE /users` | ❌ | ✅ |
+| `POST /profiles`, `PUT /profiles/:id` | ✅ | ✅ |
+| `DELETE /profiles/:id` | ❌ | ✅ |
+
+---
 
 ## 📖 API Endpoints
 
-### Root
+### 🔑 Auth (Public)
 
 | Method | Endpoint | Deskripsi |
-|--------|----------|-----------| 
-| GET    | `/`      | Welcome message |
+|--------|----------|-----------|
+| POST | `/auth/register` | Daftar akun baru |
+| POST | `/auth/login` | Login → dapat JWT token |
+
+**Request Body — Register:**
+```json
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "password": "secret123",
+  "role": "USER"
+}
+```
+
+**Request Body — Login:**
+```json
+{
+  "email": "john@example.com",
+  "password": "secret123"
+}
+```
+
+**Response Login (200):**
+```json
+{
+  "message": "Login successful",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "data": { "id": 1, "name": "John Doe", "email": "john@example.com", "role": "USER" }
+}
+```
+
+---
+
+### 👤 Users (ADMIN only)
+
+| Method | Endpoint | Deskripsi |
+|--------|----------|-----------|
+| GET | `/users` | Ambil semua user |
+| GET | `/users/:id` | Ambil user by ID |
+| GET | `/users/:id/profile` | Ambil user beserta profil |
+| POST | `/users` | Tambah user baru |
+| PUT | `/users/:id` | Update user by ID |
+| DELETE | `/users/:id` | Hapus user by ID |
 
 ---
 
 ### 📚 Books
 
-| Method | Endpoint     | Deskripsi            |
-|--------|--------------|----------------------|
-| GET    | `/books`     | Ambil semua buku     |
-| GET    | `/books/:id` | Ambil buku by ID     |
-| POST   | `/books`     | Tambah buku baru     |
-| PUT    | `/books/:id` | Update buku by ID    |
-| DELETE | `/books/:id` | Hapus buku by ID     |
+| Method | Endpoint | Akses | Deskripsi |
+|--------|----------|-------|-----------|
+| GET | `/books` | USER, ADMIN | Ambil semua buku |
+| GET | `/books/:id` | USER, ADMIN | Ambil buku by ID |
+| POST | `/books` | ADMIN | Tambah buku baru |
+| PUT | `/books/:id` | ADMIN | Update buku by ID |
+| DELETE | `/books/:id` | ADMIN | Hapus buku by ID |
 
-#### Request Body (POST / PUT)
-
+**Request Body (POST / PUT):**
 ```json
 {
-  "title": "Judul Buku",
-  "author": "Nama Penulis",
-  "year": 2025,
+  "title": "The Great Gatsby",
+  "author": "F. Scott Fitzgerald",
+  "year": 1925,
   "available": true,
   "categoryId": 1
 }
 ```
 
-> **Note:** Field `categoryId` bersifat opsional. Jika dikirim, sistem akan memvalidasi apakah category tersebut ada sebelum menyimpan.
-
 ---
 
-### 👤 Users
+### 🏷 Categories
 
-| Method | Endpoint              | Deskripsi                    |
-|--------|-----------------------|------------------------------|
-| GET    | `/users`              | Ambil semua user             |
-| GET    | `/users/:id`          | Ambil user by ID             |
-| GET    | `/users/:id/profile`  | Ambil user by ID + profil    |
-| POST   | `/users`              | Tambah user baru             |
-| PUT    | `/users/:id`          | Update user by ID            |
-| DELETE | `/users/:id`          | Hapus user by ID             |
-
-#### Request Body (POST / PUT)
-
-```json
-{
-  "name": "John Doe",
-  "email": "john@example.com",
-  "password": "password123",
-  "role": "USER"
-}
-```
-
-> **Note:** Password otomatis di-hash menggunakan bcrypt sebelum disimpan ke database.
+| Method | Endpoint | Akses | Deskripsi |
+|--------|----------|-------|-----------|
+| GET | `/categories` | USER, ADMIN | Ambil semua kategori |
+| GET | `/categories/:id` | USER, ADMIN | Ambil kategori by ID |
+| GET | `/categories/:id/books` | USER, ADMIN | Ambil buku by kategori |
+| POST | `/categories` | ADMIN | Tambah kategori baru |
+| PUT | `/categories/:id` | ADMIN | Update kategori by ID |
+| DELETE | `/categories/:id` | ADMIN | Hapus kategori by ID |
 
 ---
 
 ### 🪪 Profiles
 
-| Method | Endpoint         | Deskripsi              |
-|--------|------------------|------------------------|
-| GET    | `/profiles`      | Ambil semua profil     |
-| GET    | `/profiles/:id`  | Ambil profil by ID     |
-| POST   | `/profiles`      | Tambah profil baru     |
-| PUT    | `/profiles/:id`  | Update profil by ID    |
-| DELETE | `/profiles/:id`  | Hapus profil by ID     |
-
-#### Request Body (POST)
-
-```json
-{
-  "userId": 1,
-  "address": "Jl. Contoh No. 123",
-  "phone": "081234567890"
-}
-```
-
-#### Request Body (PUT)
-
-```json
-{
-  "address": "Jl. Baru No. 456",
-  "phone": "089876543210"
-}
-```
-
-> **Note:** Setiap user hanya bisa memiliki satu profil (relasi one-to-one). Response GET menyertakan data user terkait.
+| Method | Endpoint | Akses | Deskripsi |
+|--------|----------|-------|-----------|
+| GET | `/profiles` | ADMIN | Ambil semua profil |
+| GET | `/profiles/:id` | ADMIN | Ambil profil by ID |
+| POST | `/profiles` | USER, ADMIN | Tambah profil |
+| PUT | `/profiles/:id` | USER, ADMIN | Update profil |
+| DELETE | `/profiles/:id` | ADMIN | Hapus profil |
 
 ---
 
-### 🏷 Categories
+### 📦 Borrowings (Many-to-Many: Users ↔ Books)
 
-| Method | Endpoint                | Deskripsi                         |
-|--------|-------------------------|-----------------------------------|
-| GET    | `/categories`           | Ambil semua kategori              |
-| GET    | `/categories/:id`       | Ambil kategori by ID              |
-| GET    | `/categories/:id/books` | Ambil semua buku by kategori ID   |
-| POST   | `/categories`           | Tambah kategori baru              |
-| PUT    | `/categories/:id`       | Update kategori by ID             |
-| DELETE | `/categories/:id`       | Hapus kategori by ID              |
+| Method | Endpoint | Akses | Deskripsi |
+|--------|----------|-------|-----------|
+| GET | `/borrowings` | ADMIN | Ambil semua peminjaman |
+| GET | `/borrowings/:id` | ADMIN | Ambil peminjaman by ID |
+| GET | `/borrowings/user/:userId` | USER (sendiri), ADMIN | Peminjaman milik user |
+| POST | `/borrowings` | USER, ADMIN | Pinjam buku |
+| PATCH | `/borrowings/:id/return` | USER, ADMIN | Kembalikan buku |
+| DELETE | `/borrowings/:id` | ADMIN | Hapus data peminjaman |
 
-#### Request Body (POST / PUT)
-
+**Request Body (POST — pinjam buku):**
 ```json
 {
-  "name": "Fiksi"
+  "userId": 1,
+  "bookId": 2
 }
 ```
 
-> **Note:** Response GET menyertakan daftar buku yang terkait dengan kategori tersebut.
+> **Catatan:** Saat buku dipinjam, field `available` pada Books otomatis menjadi `false`. Saat dikembalikan, otomatis kembali `true`. Operasi ini berjalan dalam satu **database transaction**.
 
 ---
 
 ## 🗄 Database Schema
 
-### Users
-
-| Field     | Type     | Keterangan             |
-|-----------|----------|------------------------|
-| id        | Int      | Primary key, auto-increment |
-| name      | String   | Nama user              |
-| email     | String   | Email (unique)         |
-| password  | String   | Password (hashed, max 255) |
-| role      | String   | Default: `"USER"`      |
-| createdAt | DateTime | Timestamp otomatis     |
-
-### Profiles
-
-| Field     | Type     | Keterangan             |
-|-----------|----------|------------------------|
-| id        | Int      | Primary key, auto-increment |
-| userId    | Int      | FK ke Users (unique)   |
-| address   | String   | Alamat                 |
-| phone     | String   | Nomor telepon          |
-| createdAt | DateTime | Timestamp otomatis     |
-
-### Categories
-
-| Field     | Type     | Keterangan             |
-|-----------|----------|------------------------|
-| id        | Int      | Primary key, auto-increment |
-| name      | String   | Nama kategori          |
-| createdAt | DateTime | Timestamp otomatis     |
-
-### Books
-
-| Field      | Type     | Keterangan             |
-|------------|----------|------------------------|
-| id         | Int      | Primary key, auto-increment |
-| categoryId | Int?     | FK ke Categories (opsional) |
-| title      | String   | Judul buku             |
-| author     | String   | Penulis buku           |
-| year       | Int      | Tahun terbit           |
-| available  | Boolean  | Default: `true`        |
-| createdAt  | DateTime | Timestamp otomatis     |
-
 ### Relasi
 
 ```
-Users 1 ──── 1 Profiles       (One-to-One)
-Categories 1 ──── * Books     (One-to-Many)
+Users ──────── 1 ─────── Profiles      (One-to-One)
+Categories ─── 1 ─────── * Books       (One-to-Many)
+Users ────── * ─ Borrowings ─ * ────── Books  (Many-to-Many via pivot table)
 ```
+
+### Tabel Borrowings (Pivot Table)
+
+| Field | Type | Keterangan |
+|---|---|---|
+| id | Int | Primary key, auto-increment |
+| userId | Int | FK ke Users |
+| bookId | Int | FK ke Books |
+| borrow_date | DateTime | Tanggal pinjam (default: now) |
+| returned_at | DateTime? | Tanggal kembali (null = belum kembali) |
+| createdAt | DateTime | Timestamp otomatis |
+
+---
+
+## 📋 HTTP Response Codes
+
+| Code | Kondisi |
+|---|---|
+| `200 OK` | Berhasil GET / update / delete |
+| `201 Created` | Berhasil membuat resource baru |
+| `400 Bad Request` | Input tidak valid / buku sudah dikembalikan |
+| `401 Unauthorized` | Token tidak ada atau tidak valid |
+| `403 Forbidden` | Role tidak punya akses ke endpoint |
+| `404 Not Found` | Resource tidak ditemukan |
+| `409 Conflict` | Data sudah ada (email duplikat, profil sudah dibuat, dll) |
+| `500 Internal Server Error` | Kesalahan server |
+
+---
+
+## 📝 Validasi Input
+
+Setiap endpoint yang menerima body request divalidasi menggunakan **express-validator**. Jika validasi gagal, response yang dikirim:
+
+```json
+{
+  "message": "Validation failed",
+  "errors": [
+    { "field": "email", "message": "Must be a valid email address" },
+    { "field": "password", "message": "Password must be at least 6 characters" }
+  ]
+}
+```
+
+---
+
+## 📊 Swagger API Documentation
+
+Dokumentasi interaktif tersedia di:
+
+```
+http://localhost:3000/api-docs
+```
+
+### Cara Testing via Swagger UI
+
+1. Buka `http://localhost:3000/api-docs`
+2. Jalankan **`POST /auth/login`** → copy nilai `token` dari response
+3. Klik tombol **🔒 Authorize** di pojok kanan atas
+4. Masukkan token → klik **Authorize**
+5. Semua endpoint kini bisa ditest langsung dari browser
+
+---
+
+## ⚙️ Scripts
+
+```bash
+npm run dev    # Jalankan server dengan nodemon (auto-restart)
+npm run start  # Jalankan server production (node)
+```
+
+---
 
 ## ⚙️ GitHub Actions
 
-Project ini memiliki workflow **keep-alive** yang berjalan setiap 5 menit untuk ping database Supabase agar tidak auto-pause pada free tier.
+Project ini memiliki workflow **keep-alive** yang berjalan secara terjadwal untuk ping database Supabase agar tidak auto-pause pada free tier.
 
 Tambahkan secret `DATABASE_URL` di **Settings → Secrets → Actions** pada repository GitHub.

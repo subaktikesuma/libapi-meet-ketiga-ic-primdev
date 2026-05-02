@@ -21,6 +21,7 @@ model Users {
   createdAt DateTime @default(now())
 
   profile Profiles?
+  borrowings Borrowings[] // tambahkan ini
 }
 
 model Profiles {
@@ -51,4 +52,17 @@ model Books {
   createdAt DateTime @default(now())
 
   categories   Categories? @relation(fields: [categoryId], references: [id])
+  borrowings Borrowings[] // tambahkan ini
+}
+
+// Pivot Table for Many-to-Many relationship between Users and Books
+model Borrowings {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  bookId      Int
+  borrow_date DateTime  @default(now())
+  returned_at DateTime?
+  createdAt   DateTime  @default(now())
+  borrower    Users     @relation(fields: [userId], references: [id])
+  book        Books     @relation(fields: [bookId], references: [id])
 }
